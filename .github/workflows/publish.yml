@@ -1,0 +1,122 @@
+name: Publish signed packages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '19 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check for new releases or expiring metadata
+        id: check
+        run: |
+          python3 - <<'PY'
+          import datetime as dt, json, os, subprocess, urllib.request
+          latest = json.loads(subprocess.check_output(['gh', 'release', 'view', '--repo', 'loomx-ai/steward', '--json', 'tagName']))['tagName']
+          changed = True
+          try:
+              with urllib.request.urlopen('https://loomx-ai.github.io/packages/steward/status.json', timeout=15) as response:
+                  current = json.load(response)
+              age = dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(current['generatedAt'])
+              changed = current['latest'] != latest or current['source'] != os.environ['GITHUB_SHA'] or age.days >= 7
+          except Exception:
+              pass
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'changed={str(changed).lower()}\n')
+          PY
+      - name: Install packaging tools
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils rpm createrepo-c gnupg
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Sign verified packages and metadata
+        if: steps.check.outputs.changed == 'true'
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/package-signing"
+          install -d -m 700 "$GNUPGHOME"
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$PACKAGE_SIGNING_KEY" | gpg --batch --import
+          unset PACKAGE_SIGNING_KEY
+          SIGNING_FINGERPRINT=$(gpg --show-keys --with-colons gpg.key | awk -F: '$1=="fpr" {print $10; exit}')
+          export SIGNING_FINGERPRINT
+          python3 scripts/build.py
+          gpg --verify site/steward/apt/dists/stable/InRelease
+          gpg --verify site/steward/checksums.txt.asc site/steward/checksums.txt
+          rpm --import gpg.key
+          for arch in x86_64 aarch64; do
+            rpm --checksig "site/steward/rpm/$arch/Packages/"*.rpm
+            gpg --verify "site/steward/rpm/$arch/repodata/repomd.xml.asc" "site/steward/rpm/$arch/repodata/repomd.xml"
+          done
+      - uses: actions/upload-artifact@v6
+        if: steps.check.outputs.changed == 'true'
+        with:
+          name: repository
+          path: site
+          if-no-files-found: error
+
+  verify:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: 'ubuntu:24.04', kind: apt}
+          - {image: 'debian:12', kind: apt}
+          - {image: 'fedora:43', kind: rpm}
+          - {image: 'rockylinux:9', kind: rpm}
+          - {image: 'amazonlinux:2023', kind: rpm}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: repository
+          path: site
+      - name: Install from the signed repository
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+        run: |
+          docker run --rm -v "$PWD/site:/repo:ro" -v "$PWD/scripts:/checks:ro" "$IMAGE" bash /checks/smoke.sh "$KIND"
+
+  deploy:
+    needs: [build, verify]
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: repository
+          path: site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
