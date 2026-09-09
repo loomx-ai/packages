@@ -13,6 +13,9 @@ metadata; RPM verifies both the package signatures and `repomd.xml` signature.
 The original GitHub Release assets are immutable. RPM signing happens only on
 the copies hosted here. `checksums.txt.asc` signs the latest release's original
 checksum file for users downloading its archives directly.
+The release index also accepts additional standalone executables verified by
+GitHub's SHA-256 asset digest, so existing release archives and checksums do not
+need to be replaced. New releases include executables in their checksum file.
 
 ## Publish
 

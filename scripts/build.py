@@ -33,6 +33,21 @@ def verify(directory):
     return checksums
 
 
+def release_assets(release, checksums):
+    """Older releases may have additive binaries whose digest is recorded by GitHub."""
+    assets = {}
+    for asset in release["assets"]:
+        name = asset["name"]
+        digest = checksums.get(name)
+        if digest is None and re.fullmatch(r"steward_" + re.escape(release["tag_name"][1:]) + r"_(?:(?:darwin|linux)_(?:amd64|arm64)|windows_amd64\.exe)", name):
+            github_digest = asset.get("digest") or ""
+            if re.fullmatch(r"sha256:[0-9a-f]{64}", github_digest):
+                digest = github_digest.removeprefix("sha256:")
+        if digest:
+            assets[name] = {"url": asset["browser_download_url"], "sha256": digest, "size": asset["size"]}
+    return assets
+
+
 def main():
     latest = json.loads(run("gh", "release", "view", "--repo", REPO, "--json", "tagName"))["tagName"]
     releases = json.loads(run("gh", "api", f"repos/{REPO}/releases?per_page=100"))
@@ -55,7 +70,7 @@ def main():
             args += ["--pattern", "*.deb", "--pattern", "*.rpm"]
         run(*args)
         hashes = verify(incoming)
-        assets = {a["name"]: {"url": a["browser_download_url"], "sha256": hashes.get(a["name"]), "size": a["size"]} for a in release["assets"] if a["name"] in hashes}
+        assets = release_assets(release, hashes)
         index.append({"version": version, "url": release["html_url"], "publishedAt": release["published_at"], "assets": assets})
         if tag != latest:
             continue
