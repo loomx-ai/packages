@@ -31,6 +31,11 @@ data in Ubuntu, Debian, Fedora, Rocky Linux, and Amazon Linux containers. Only
 then does GitHub Pages deploy the complete repository in one operation. Failed
 builds leave the previous site available.
 
+Each deployment commits `published.json` as a receipt. Weekly metadata renewal
+therefore also maintains repository activity, keeping GitHub's public-repository
+inactivity policy from disabling the scheduled publisher. Source comparison uses
+the packaging files, so receipt commits do not cause unnecessary rebuilds.
+
 `PACKAGE_SIGNING_KEY` is an Actions secret containing the armored private key
 corresponding to `gpg.key`. Build jobs import it into a temporary keyring that is
 deleted before uploading artifacts. Deployment jobs have no signing key access.

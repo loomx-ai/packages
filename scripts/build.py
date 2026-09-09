@@ -88,7 +88,7 @@ def main():
         run("gpg", "--batch", "--yes", "--local-user", key, "--armor", "--detach-sign", "--output", str(release_dir / "Release.gpg"), str(release_dir / "Release"))
     (output / "releases.json").write_text(json.dumps({"latest": latest[1:], "releases": index}, indent=2) + "\n")
     (output / "steward.repo").write_text(f"[loomx-steward]\nname=LoomX Steward\nbaseurl={BASE}/rpm/$basearch\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey={BASE}/gpg.key\n")
-    (output / "status.json").write_text(json.dumps({"latest": latest, "source": os.environ["GITHUB_SHA"], "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n")
+    (output / "status.json").write_text(json.dumps({"latest": latest, "source": os.environ["PACKAGE_SOURCE"], "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n")
     (ROOT / "site" / "index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>LoomX packages</title><h1>LoomX packages</h1><p><a href="https://loomx.ai/steward/docs/installation">Install Steward</a></p><p><a href="steward/gpg.key">Package signing key</a></p></html>')
 
 
