@@ -48,7 +48,8 @@ configuration before removing the old key.
 
 Native package repositories contain the latest stable version. Older versions
 remain available as immutable GitHub Release downloads; `releases.json` indexes
-up to 30 stable releases for the documentation's version picker.
+all published semantic-version releases, including prereleases, for the download
+history and documentation's version picker. Drafts are never published.
 
 ## R2 release downloads
 
@@ -88,8 +89,9 @@ TTL. Configure a Cloudflare Cache Rule for `/steward/v*` if extensionless binari
 should be cached at the edge; custom-domain defaults do not cache every type.
 
 Removing `R2_BUCKET` and rerunning publication restores GitHub download URLs.
-Mirror uploads never delete older R2 objects. At most 30 releases are indexed;
-retained objects beyond that still count toward R2 storage usage.
+Mirror uploads never delete older R2 objects. All published versions are indexed
+and retained objects count toward R2 storage usage. The hourly publisher detects
+new prereleases and assets added to an existing release as well as stable releases.
 
 ## Check changes
 

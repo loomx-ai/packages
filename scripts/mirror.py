@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import urllib.request
 
-from build import REPO, ROOT
+from build import REPO, ROOT, VERSION
 
 DOWNLOADS = "https://downloads.loomx.ai/steward"
 
@@ -19,7 +19,7 @@ def validate(index):
         raise ValueError("Missing latest release")
     for release in index["releases"]:
         version = release["version"]
-        if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version) or not release["assets"]:
+        if not re.fullmatch(VERSION, version) or not release["assets"]:
             raise ValueError("Invalid release")
         for name, asset in release["assets"].items():
             if (not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name)

@@ -30,14 +30,17 @@ jobs:
         id: check
         run: |
           python3 - <<'PY'
-          import datetime as dt, json, os, subprocess, urllib.request
+          import datetime as dt, json, os, subprocess, sys, urllib.request
+          sys.path.insert(0, 'scripts')
+          from build import public_releases, release_fingerprint
           latest = json.loads(subprocess.check_output(['gh', 'release', 'view', '--repo', 'loomx-ai/steward', '--json', 'tagName']))['tagName']
+          release_source = release_fingerprint(public_releases())
           changed = True
           try:
               with urllib.request.urlopen('https://loomx-ai.github.io/packages/steward/status.json', timeout=15) as response:
                   current = json.load(response)
               age = dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(current['generatedAt'])
-              changed = current['latest'] != latest or current['source'] != os.environ['PACKAGE_SOURCE'] or age.days >= 7
+              changed = current['latest'] != latest or current['source'] != os.environ['PACKAGE_SOURCE'] or current.get('releases') != release_source or age.days >= 7
           except Exception:
               pass
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:

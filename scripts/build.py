@@ -13,10 +13,32 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "loomx-ai/steward"
 BASE = "https://loomx-ai.github.io/packages/steward"
+VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?"
 
 
 def run(*args, cwd=None):
     return subprocess.check_output(args, cwd=cwd, text=True)
+
+
+def release_order(release):
+    core, _, suffix = release["tag_name"][1:].partition("-")
+    identifiers = tuple((0, int(part)) if part.isdigit() else (1, part) for part in suffix.split("."))
+    return tuple(map(int, core.split("."))), not suffix, identifiers
+
+
+def public_releases():
+    pages = json.loads(run("gh", "api", "--paginate", "--slurp", f"repos/{REPO}/releases?per_page=100"))
+    releases = [release for page in pages for release in page
+                if not release["draft"] and re.fullmatch("v" + VERSION, release["tag_name"])]
+    return sorted(releases, key=release_order, reverse=True)
+
+
+def release_fingerprint(releases):
+    # Ignore download counters; detect new versions, prereleases, and additive assets.
+    state = [[r["tag_name"], r["published_at"], r["prerelease"],
+              [[a["name"], a["size"], a.get("digest"), a.get("updated_at")] for a in r["assets"]]]
+             for r in releases]
+    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
 
 
 def verify(directory):
@@ -50,17 +72,15 @@ def release_assets(release, checksums):
 
 def main():
     latest = json.loads(run("gh", "release", "view", "--repo", REPO, "--json", "tagName"))["tagName"]
-    releases = json.loads(run("gh", "api", f"repos/{REPO}/releases?per_page=100"))
-    releases = [r for r in releases if not r["draft"] and not r["prerelease"] and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", r["tag_name"])]
+    releases = public_releases()
     if latest not in [r["tag_name"] for r in releases]:
         raise ValueError("Latest stable release is missing")
-    releases.sort(key=lambda r: tuple(map(int, r["tag_name"][1:].split("."))), reverse=True)
     output = ROOT / "site" / "steward"
     output.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / "gpg.key", output / "gpg.key")
     key = os.environ["SIGNING_FINGERPRINT"]
     index = []
-    for release in releases[:30]:
+    for release in releases:
         tag = release["tag_name"]
         version = tag[1:]
         incoming = ROOT / "incoming" / version
@@ -71,7 +91,7 @@ def main():
         run(*args)
         hashes = verify(incoming)
         assets = release_assets(release, hashes)
-        index.append({"version": version, "url": release["html_url"], "publishedAt": release["published_at"], "assets": assets})
+        index.append({"version": version, "url": release["html_url"], "publishedAt": release["published_at"], "prerelease": release["prerelease"] or "-" in version, "assets": assets})
         if tag != latest:
             continue
         # Sign the unchanged upstream checksum file as well as package metadata.
@@ -103,7 +123,7 @@ def main():
         run("gpg", "--batch", "--yes", "--local-user", key, "--armor", "--detach-sign", "--output", str(release_dir / "Release.gpg"), str(release_dir / "Release"))
     (output / "releases.json").write_text(json.dumps({"latest": latest[1:], "releases": index}, indent=2) + "\n")
     (output / "steward.repo").write_text(f"[loomx-steward]\nname=LoomX Steward\nbaseurl={BASE}/rpm/$basearch\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey={BASE}/gpg.key\n")
-    (output / "status.json").write_text(json.dumps({"latest": latest, "source": os.environ["PACKAGE_SOURCE"], "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n")
+    (output / "status.json").write_text(json.dumps({"latest": latest, "source": os.environ["PACKAGE_SOURCE"], "releases": release_fingerprint(releases), "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n")
     (ROOT / "site" / "index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>LoomX packages</title><h1>LoomX packages</h1><p><a href="https://loomx.ai/steward/docs/installation">Install Steward</a></p><p><a href="steward/gpg.key">Package signing key</a></p></html>')
 
 
