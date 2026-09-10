@@ -21,10 +21,11 @@ jobs:
       changed: ${{ steps.check.outputs.changed }}
     env:
       GH_TOKEN: ${{ github.token }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
     steps:
       - uses: actions/checkout@v5
       - name: Identify packaging source
-        run: echo "PACKAGE_SOURCE=$(git rev-parse HEAD:.github HEAD:scripts HEAD:gpg.key | sha256sum | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+        run: echo "PACKAGE_SOURCE=$(git rev-parse HEAD:.github HEAD:scripts HEAD:gpg.key | sha256sum | cut -d ' ' -f 1)-$R2_BUCKET" >> "$GITHUB_ENV"
       - name: Check for new releases or expiring metadata
         id: check
         run: |
@@ -119,6 +120,15 @@ jobs:
           name: repository
           path: site
       - uses: actions/configure-pages@v5
+      - name: Mirror verified release downloads to R2
+        if: vars.R2_BUCKET != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_ACCOUNT_ID: '925beee973fbf6a7edbd12eba4966977'
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python3 scripts/mirror.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

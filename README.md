@@ -50,6 +50,47 @@ Native package repositories contain the latest stable version. Older versions
 remain available as immutable GitHub Release downloads; `releases.json` indexes
 up to 30 stable releases for the documentation's version picker.
 
+## R2 release downloads
+
+The publisher can mirror the indexed GitHub Release assets to the `loomx-downloads`
+R2 bucket, served at `https://downloads.loomx.ai/steward/v<VERSION>/<FILE>`.
+GitHub remains the release source, and APT/RPM repositories stay on GitHub Pages.
+Original release RPM files in R2 retain their upstream checksums; the separately
+signed RPM copies continue to live in the package repository.
+
+Enable R2 in the existing Cloudflare account before creating the bucket. Using
+the pinned Wrangler installed in the sibling `docs` checkout, run from there:
+
+```sh
+npx wrangler r2 bucket create loomx-downloads --location apac
+npx wrangler r2 bucket domain add loomx-downloads --domain downloads.loomx.ai --zone-id <LOOMX_ZONE_ID> --min-tls 1.2
+npx wrangler r2 bucket cors set loomx-downloads --file ../packages/r2-cors.json
+```
+
+Use a dedicated R2 API token with **Object Read & Write** access limited to this
+bucket. Store its S3 credentials as the `R2_ACCESS_KEY_ID` and
+`R2_SECRET_ACCESS_KEY` GitHub Actions secrets in this repository. Do not use a
+personal Wrangler OAuth token in CI. The Ubuntu runner provides the AWS CLI;
+manual publication also requires `aws`, `gh`, and Python 3.9 or later.
+
+Deploy the documentation renderer's R2 URL support before switching downloads.
+After the custom domain is active and the secrets are configured, set the
+repository variable `R2_BUCKET=loomx-downloads` and dispatch `publish.yml`.
+Changing this variable also forces publication when the release is unchanged.
+
+`scripts/mirror.py` downloads the indexed releases, checks every asset's size and
+SHA-256, uploads the original files and `checksums.txt`, and downloads them from
+the public domain to verify their hashes again. Only then does it publish the R2
+index and rewrite the GitHub Pages release index to use the verified R2 URLs.
+A failed mirror stops publication, leaving the previous Pages index available.
+Versioned objects use one-year immutable caching; the R2 index uses a 60-second
+TTL. Configure a Cloudflare Cache Rule for `/steward/v*` if extensionless binaries
+should be cached at the edge; custom-domain defaults do not cache every type.
+
+Removing `R2_BUCKET` and rerunning publication restores GitHub download URLs.
+Mirror uploads never delete older R2 objects. At most 30 releases are indexed;
+retained objects beyond that still count toward R2 storage usage.
+
 ## Check changes
 
 ```sh
