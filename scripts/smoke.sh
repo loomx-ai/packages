@@ -40,5 +40,6 @@ steward server status
 steward server stop
 wait "$pid"
 if [[ "$1" == apt ]]; then apt-get remove -y steward; else dnf remove -y steward; fi
-test -f .steward/steward.db
+test -f "$HOME/.steward/steward.db"
+test ! -e .steward
 echo 'PASS: signed repository install, upgrade, server, uninstall, and preserved data'
