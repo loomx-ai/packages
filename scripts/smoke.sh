@@ -1,5 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+# Each run is a fresh container; a release check would register a new installation
+# per smoke test and inflate the install counts.
+export STEWARD_CHECKPOINT_DISABLE=1
 if [[ "$1" == apt ]]; then
   apt-get update -qq
   apt-get install -y -qq ca-certificates gnupg python3
